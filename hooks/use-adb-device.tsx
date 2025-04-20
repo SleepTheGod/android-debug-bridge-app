@@ -226,4 +226,3 @@ export function useAdbDevice() {
   }
   return context
 }
-
