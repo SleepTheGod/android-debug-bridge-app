@@ -461,112 +461,208 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
     setErrorMessage(null)
 
     try {
-      // Request a device with comprehensive filters
-      const selectedDevice = await navigator.usb.requestDevice({
-        filters: [
-          // ADB filter
-          { classCode: ADB_CLASS, subclassCode: ADB_SUBCLASS, protocolCode: ADB_PROTOCOL },
-          // Fastboot filter
-          { classCode: 0xff, subclassCode: 0x42, protocolCode: 0x03 },
-          // Recovery/Sideload filter
-          { classCode: 0xff, subclassCode: 0x42, protocolCode: 0x02 },
-          // Generic Android filter (some devices don't properly implement the class codes)
-          { vendorId: 0x18d1 }, // Google
-          { vendorId: 0x04e8 }, // Samsung
-          { vendorId: 0x22b8 }, // Motorola
-          { vendorId: 0x0bb4 }, // HTC
-          { vendorId: 0x12d1 }, // Huawei
-          { vendorId: 0x2717 }, // Xiaomi
-          { vendorId: 0x0e8d }, // MediaTek
-          { vendorId: 0x2a70 }, // OnePlus
-          { vendorId: 0x05c6 }, // Qualcomm
-          { vendorId: 0x1ebf }, // Realme
-          { vendorId: 0x2b4c }, // Vivo
-          { vendorId: 0x0421 }, // Nokia
-        ],
-      })
-
-      // Open device with timeout
-      const openPromise = selectedDevice.open()
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Connection timeout")), CONNECTION_TIMEOUT),
-      )
-
-      await Promise.race([openPromise, timeoutPromise])
-
-      // Select configuration
-      await selectedDevice.selectConfiguration(1)
-
-      // Detect device mode
-      const mode = detectDeviceMode(selectedDevice)
-      setDeviceMode(mode)
-
-      // Find interface and endpoints
-      const interfaceEndpoints = findInterfaceAndEndpoints(selectedDevice, mode)
-
-      if (!interfaceEndpoints) {
-        throw new Error(`Could not find ${mode} interface`)
+      // Check if we're in a secure context
+      if (window.isSecureContext === false) {
+        throw new Error("WebUSB requires a secure context (HTTPS). Please use HTTPS to access this page.")
       }
 
-      const { interfaceNumber, endpointIn, endpointOut } = interfaceEndpoints
-
-      // Store interface and endpoints
-      setInterfaceNumber(interfaceNumber)
-      setEndpointIn(endpointIn)
-      setEndpointOut(endpointOut)
-
-      // Claim interface
+      // Try to access the USB API to check for permissions policy restrictions
       try {
-        await selectedDevice.claimInterface(interfaceNumber)
+        // Check if we can access the getDevices method
+        await navigator.usb.getDevices()
       } catch (error) {
-        console.error("Error claiming interface:", error)
-
-        // Try to reset the device and claim again
-        try {
-          await selectedDevice.reset()
-          await new Promise((resolve) => setTimeout(resolve, 1000))
-          await selectedDevice.claimInterface(interfaceNumber)
-        } catch (resetError) {
-          throw new Error("Failed to claim interface. Device may be in use by another application.")
+        // Check specifically for permissions policy errors
+        if (
+          error instanceof DOMException &&
+          (error.message.includes("permissions policy") ||
+            error.message.includes("Access to the feature") ||
+            error.message.includes("disallowed by permissions"))
+        ) {
+          throw new Error(
+            "USB access is blocked by permissions policy. This may be due to preview mode restrictions or Content-Security-Policy settings.",
+          )
         }
       }
 
-      // Initialize based on mode
-      if (mode === "adb") {
-        // Send ADB connection message
-        const hostName = "web-adb-client"
-        const hostNameBuffer = new TextEncoder().encode(hostName + "\0")
-        const connectMessage = createAdbMessage(A_CNXN, ADB_VERSION_NO_CHECKSUM, 0x1000000, hostNameBuffer)
+      // Request a device with comprehensive filters
+      try {
+        const selectedDevice = await navigator.usb.requestDevice({
+          filters: [
+            // ADB filter
+            { classCode: ADB_CLASS, subclassCode: ADB_SUBCLASS, protocolCode: ADB_PROTOCOL },
+            // Fastboot filter
+            { classCode: 0xff, subclassCode: 0x42, protocolCode: 0x03 },
+            // Recovery/Sideload filter
+            { classCode: 0xff, subclassCode: 0x42, protocolCode: 0x02 },
+            // Generic Android filter (some devices don't properly implement the class codes)
+            { vendorId: 0x18d1 }, // Google
+            { vendorId: 0x04e8 }, // Samsung
+            { vendorId: 0x22b8 }, // Motorola
+            { vendorId: 0x0bb4 }, // HTC
+            { vendorId: 0x12d1 }, // Huawei
+            { vendorId: 0x2717 }, // Xiaomi
+            { vendorId: 0x0e8d }, // MediaTek
+            { vendorId: 0x2a70 }, // OnePlus
+            { vendorId: 0x05c6 }, // Qualcomm
+            { vendorId: 0x1ebf }, // Realme
+            { vendorId: 0x2b4c }, // Vivo
+            { vendorId: 0x0421 }, // Nokia
+          ],
+        })
 
-        await selectedDevice.transferOut(endpointOut, connectMessage)
-
-        // Wait for response with timeout
-        const responsePromise = selectedDevice.transferIn(endpointIn, 24 + 256)
-        const responseTimeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Response timeout")), CONNECTION_TIMEOUT),
+        // Rest of the connection code...
+        // Open device with timeout
+        const openPromise = selectedDevice.open()
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Connection timeout")), CONNECTION_TIMEOUT),
         )
 
-        const response = await Promise.race([responsePromise, responseTimeoutPromise])
+        await Promise.race([openPromise, timeoutPromise])
 
-        if (!response.data) {
-          throw new Error("No response from device")
+        // Select configuration
+        await selectedDevice.selectConfiguration(1)
+
+        // Detect device mode
+        const mode = detectDeviceMode(selectedDevice)
+        setDeviceMode(mode)
+
+        // Find interface and endpoints
+        const interfaceEndpoints = findInterfaceAndEndpoints(selectedDevice, mode)
+
+        if (!interfaceEndpoints) {
+          throw new Error(`Could not find ${mode} interface`)
         }
 
-        const view = new DataView(response.data.buffer)
-        const command = view.getUint32(0, true)
+        const { interfaceNumber, endpointIn, endpointOut } = interfaceEndpoints
 
-        if (command === A_CNXN) {
-          // Connected successfully
-          setConnectionState("connected")
-          setDevice(selectedDevice)
+        // Store interface and endpoints
+        setInterfaceNumber(interfaceNumber)
+        setEndpointIn(endpointIn)
+        setEndpointOut(endpointOut)
 
-          // Get device info
-          const deviceInfoData = await executeAdbShellCommand(selectedDevice, "getprop", endpointIn, endpointOut)
+        // Claim interface
+        try {
+          await selectedDevice.claimInterface(interfaceNumber)
+        } catch (error) {
+          console.error("Error claiming interface:", error)
 
-          // Parse device properties
-          const properties = deviceInfoData.split("\n").reduce(
+          // Try to reset the device and claim again
+          try {
+            await selectedDevice.reset()
+            await new Promise((resolve) => setTimeout(resolve, 1000))
+            await selectedDevice.claimInterface(interfaceNumber)
+          } catch (resetError) {
+            throw new Error("Failed to claim interface. Device may be in use by another application.")
+          }
+        }
+
+        // Initialize based on mode
+        if (mode === "adb") {
+          // Send ADB connection message
+          const hostName = "web-adb-client"
+          const hostNameBuffer = new TextEncoder().encode(hostName + "\0")
+          const connectMessage = createAdbMessage(A_CNXN, ADB_VERSION_NO_CHECKSUM, 0x1000000, hostNameBuffer)
+
+          await selectedDevice.transferOut(endpointOut, connectMessage)
+
+          // Wait for response with timeout
+          const responsePromise = selectedDevice.transferIn(endpointIn, 24 + 256)
+          const responseTimeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Response timeout")), CONNECTION_TIMEOUT),
+          )
+
+          const response = await Promise.race([responsePromise, responseTimeoutPromise])
+
+          if (!response.data) {
+            throw new Error("No response from device")
+          }
+
+          const view = new DataView(response.data.buffer)
+          const command = view.getUint32(0, true)
+
+          if (command === A_CNXN) {
+            // Connected successfully
+            setConnectionState("connected")
+            setDevice(selectedDevice)
+
+            // Get device info
+            const deviceInfoData = await executeAdbShellCommand(selectedDevice, "getprop", endpointIn, endpointOut)
+
+            // Parse device properties
+            const properties = deviceInfoData.split("\n").reduce(
+              (acc, line) => {
+                const match = line.match(/\[(.*?)\]: \[(.*?)\]/)
+                if (match) {
+                  acc[match[1]] = match[2]
+                }
+                return acc
+              },
+              {} as Record<string, string>,
+            )
+
+            const info: DeviceInfo = {
+              serial: selectedDevice.serialNumber || properties["ro.serialno"] || "Unknown",
+              model: properties["ro.product.model"] || "Unknown",
+              androidVersion: properties["ro.build.version.release"] || "Unknown",
+              mode: "adb",
+              product: properties["ro.product.name"] || "Unknown",
+              cpuArch: properties["ro.product.cpu.abi"] || "Unknown",
+              kernelVersion: properties["ro.kernel.version"] || "Unknown",
+              buildFingerprint: properties["ro.build.fingerprint"] || "Unknown",
+            }
+
+            // Get battery level
+            try {
+              const batteryInfo = await executeAdbShellCommand(
+                selectedDevice,
+                "dumpsys battery",
+                endpointIn,
+                endpointOut,
+              )
+
+              const levelMatch = batteryInfo.match(/level: (\d+)/)
+              if (levelMatch) {
+                info.batteryLevel = Number.parseInt(levelMatch[1])
+              }
+            } catch (error) {
+              console.warn("Could not get battery info:", error)
+            }
+
+            setDeviceInfo(info)
+            return
+          } else if (command === A_AUTH) {
+            // Authentication required
+            setConnectionState("authenticating")
+
+            const authenticated = await authenticateAdb(selectedDevice, interfaceNumber, endpointIn, endpointOut)
+
+            if (authenticated) {
+              setConnectionState("connected")
+              setDevice(selectedDevice)
+
+              // Get device info (same as above)
+              // This would be duplicated in a real implementation
+              const info: DeviceInfo = {
+                serial: selectedDevice.serialNumber || "Unknown",
+                mode: "adb",
+              }
+
+              setDeviceInfo(info)
+              return
+            } else {
+              throw new Error("Authentication failed")
+            }
+          } else {
+            throw new Error(`Unexpected response: ${command.toString(16)}`)
+          }
+        } else if (mode === "fastboot") {
+          // Send fastboot getvar command to get device info
+          const result = await executeFastbootCommand(selectedDevice, "getvar:all", endpointIn, endpointOut)
+
+          // Parse fastboot variables
+          const variables = result.split("\n").reduce(
             (acc, line) => {
-              const match = line.match(/\[(.*?)\]: \[(.*?)\]/)
+              const match = line.match(/(.*?): (.*)/)
               if (match) {
                 acc[match[1]] = match[2]
               }
@@ -576,103 +672,56 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
           )
 
           const info: DeviceInfo = {
-            serial: selectedDevice.serialNumber || properties["ro.serialno"] || "Unknown",
-            model: properties["ro.product.model"] || "Unknown",
-            androidVersion: properties["ro.build.version.release"] || "Unknown",
-            mode: "adb",
-            product: properties["ro.product.name"] || "Unknown",
-            cpuArch: properties["ro.product.cpu.abi"] || "Unknown",
-            kernelVersion: properties["ro.kernel.version"] || "Unknown",
-            buildFingerprint: properties["ro.build.fingerprint"] || "Unknown",
+            serial: selectedDevice.serialNumber || "Unknown",
+            mode: "fastboot",
+            product: variables["product"] || "Unknown",
+            variant: variables["variant"] || "Unknown",
+            bootloader: variables["bootloader"] || "Unknown",
+            secure: variables["secure"] === "yes",
+            unlocked: variables["unlocked"] === "yes",
           }
 
-          // Get battery level
-          try {
-            const batteryInfo = await executeAdbShellCommand(selectedDevice, "dumpsys battery", endpointIn, endpointOut)
-
-            const levelMatch = batteryInfo.match(/level: (\d+)/)
-            if (levelMatch) {
-              info.batteryLevel = Number.parseInt(levelMatch[1])
-            }
-          } catch (error) {
-            console.warn("Could not get battery info:", error)
-          }
-
+          setConnectionState("connected")
+          setDevice(selectedDevice)
           setDeviceInfo(info)
           return
-        } else if (command === A_AUTH) {
-          // Authentication required
-          setConnectionState("authenticating")
-
-          const authenticated = await authenticateAdb(selectedDevice, interfaceNumber, endpointIn, endpointOut)
-
-          if (authenticated) {
-            setConnectionState("connected")
-            setDevice(selectedDevice)
-
-            // Get device info (same as above)
-            // This would be duplicated in a real implementation
-            const info: DeviceInfo = {
-              serial: selectedDevice.serialNumber || "Unknown",
-              mode: "adb",
-            }
-
-            setDeviceInfo(info)
-            return
-          } else {
-            throw new Error("Authentication failed")
-          }
-        } else {
-          throw new Error(`Unexpected response: ${command.toString(16)}`)
-        }
-      } else if (mode === "fastboot") {
-        // Send fastboot getvar command to get device info
-        const result = await executeFastbootCommand(selectedDevice, "getvar:all", endpointIn, endpointOut)
-
-        // Parse fastboot variables
-        const variables = result.split("\n").reduce(
-          (acc, line) => {
-            const match = line.match(/(.*?): (.*)/)
-            if (match) {
-              acc[match[1]] = match[2]
-            }
-            return acc
-          },
-          {} as Record<string, string>,
-        )
-
-        const info: DeviceInfo = {
-          serial: selectedDevice.serialNumber || "Unknown",
-          mode: "fastboot",
-          product: variables["product"] || "Unknown",
-          variant: variables["variant"] || "Unknown",
-          bootloader: variables["bootloader"] || "Unknown",
-          secure: variables["secure"] === "yes",
-          unlocked: variables["unlocked"] === "yes",
+        } else if (mode === "recovery" || mode === "sideload") {
+          // Recovery mode connection
+          setConnectionState("connected")
+          setDevice(selectedDevice)
+          setDeviceInfo({
+            serial: selectedDevice.serialNumber || "Unknown",
+            mode: mode,
+          })
+          return
         }
 
-        setConnectionState("connected")
-        setDevice(selectedDevice)
-        setDeviceInfo(info)
-        return
-      } else if (mode === "recovery" || mode === "sideload") {
-        // Recovery mode connection
-        setConnectionState("connected")
-        setDevice(selectedDevice)
-        setDeviceInfo({
-          serial: selectedDevice.serialNumber || "Unknown",
-          mode: mode,
-        })
-        return
+        throw new Error("Unsupported device mode")
+      } catch (error) {
+        // Check specifically for permissions policy errors
+        if (
+          error instanceof DOMException &&
+          (error.message.includes("permissions policy") || error.message.includes("Access to the feature"))
+        ) {
+          throw new Error(
+            "USB access is blocked by permissions policy. This may be due to preview mode restrictions or Content-Security-Policy settings.",
+          )
+        }
+        throw error
       }
 
-      throw new Error("Unsupported device mode")
+      // The rest of the existing connection code...
+      // ...
     } catch (error) {
       console.error("Error connecting to device:", error)
       setConnectionState("error")
 
       // Provide more specific error messages based on the error type
-      if (error instanceof DOMException && error.message.includes("Access denied")) {
+      if (error instanceof Error && error.message.includes("permissions policy")) {
+        setErrorMessage(
+          "USB access is blocked by permissions policy. This feature requires a deployed HTTPS environment and may not work in preview mode.",
+        )
+      } else if (error instanceof DOMException && error.message.includes("Access denied")) {
         setErrorMessage(
           "USB access denied. Please reconnect your device and make sure to click 'Allow' on the permission prompt.",
         )
@@ -994,10 +1043,20 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
   useEffect(() => {
     return () => {
       if (device) {
+        // First try to release the interface if it's claimed
+        if (interfaceNumber !== undefined) {
+          try {
+            device.releaseInterface(interfaceNumber).catch(console.error)
+          } catch (error) {
+            console.error("Error releasing interface:", error)
+          }
+        }
+
+        // Then close the device
         device.close().catch(console.error)
       }
     }
-  }, [device])
+  }, [device, interfaceNumber])
 
   const value = {
     device,

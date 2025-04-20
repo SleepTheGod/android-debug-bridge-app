@@ -17,6 +17,7 @@ import {
   Unlock,
   HardDrive,
   Info,
+  ExternalLink,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -27,12 +28,25 @@ export function DeviceSelector() {
     useDeviceConnection()
   const [isConnecting, setIsConnecting] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
+  // Add a new state to track permissions policy errors
+  const [isPermissionsPolicyBlocked, setIsPermissionsPolicyBlocked] = useState(false)
 
+  // Update the handleConnect function
   const handleConnect = async () => {
     setIsConnecting(true)
+    setIsPermissionsPolicyBlocked(false)
     try {
       await connect()
     } catch (err) {
+      // Check if this is a permissions policy error
+      if (
+        err instanceof Error &&
+        (err.message.includes("permissions policy") ||
+          err.message.includes("Access to the feature") ||
+          err.message.includes("disallowed by permissions"))
+      ) {
+        setIsPermissionsPolicyBlocked(true)
+      }
       // Error is handled by the context
       setRetryCount((prev) => prev + 1)
     } finally {
@@ -77,6 +91,42 @@ export function DeviceSelector() {
           <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-800 rounded-md flex items-center gap-2 text-sm">
             <AlertTriangle className="h-4 w-4 text-yellow-400 flex-shrink-0" />
             <span>WebUSB is not supported in this browser. Please use Chrome or Edge.</span>
+          </div>
+        )}
+
+        {isPermissionsPolicyBlocked && (
+          <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-md flex items-center gap-2 text-sm">
+            <AlertTriangle className="h-4 w-4 text-red-400 flex-shrink-0" />
+            <div>
+              <p className="font-medium">WebUSB Access Blocked</p>
+              <p className="mt-1">USB access is blocked by permissions policy. This feature:</p>
+              <ul className="list-disc pl-5 mt-1 text-xs text-gray-300">
+                <li>Requires a secure context (HTTPS)</li>
+                <li>May not work in preview environments</li>
+                <li>Needs to be deployed to a proper HTTPS domain</li>
+                <li>Cannot run in iframes without specific permissions</li>
+              </ul>
+              <p className="mt-2 text-xs">
+                To use this feature, please deploy the application to a secure HTTPS environment.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {isPermissionsPolicyBlocked && (
+          <div className="mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open("https://developer.android.com/studio/command-line/adb", "_blank")}
+              className="w-full"
+            >
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Learn About Native ADB
+            </Button>
+            <p className="text-xs text-gray-400 mt-2 text-center">
+              Native ADB provides full functionality and is not restricted by browser limitations.
+            </p>
           </div>
         )}
 

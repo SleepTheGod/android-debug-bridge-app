@@ -34,6 +34,48 @@ export function Terminal() {
 
   // Update terminal when device mode or connection state changes
   useEffect(() => {
+    // Check if we're in a preview environment or non-secure context
+    const checkPreviewMode = async () => {
+      const isSecureContext = window.isSecureContext !== false
+
+      if (!isSecureContext) {
+        setHistory((prev) => [
+          ...prev,
+          "WARNING: This application is running in a non-secure context.",
+          "WebUSB requires HTTPS to function properly.",
+          "Please deploy this application to a secure HTTPS environment for full functionality.",
+          "",
+        ])
+        return
+      }
+
+      if (!navigator.usb) return
+
+      try {
+        await navigator.usb.getDevices()
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          (error.message.includes("permissions policy") ||
+            error.message.includes("Access to the feature") ||
+            error.message.includes("disallowed by permissions"))
+        ) {
+          setHistory((prev) => [
+            ...prev,
+            "WARNING: WebUSB access is blocked by permissions policy.",
+            "This is common in preview environments or when Content-Security-Policy restrictions are in place.",
+            "For full functionality, please deploy this application to a proper HTTPS environment.",
+            "",
+            "You can still explore the interface and documentation in preview mode.",
+            "Type 'help' to see available commands.",
+            "",
+          ])
+        }
+      }
+    }
+
+    checkPreviewMode()
+
     if (device && deviceMode && connectionState === "connected") {
       setHistory((prev) => [
         ...prev,
@@ -212,6 +254,13 @@ export function Terminal() {
 
     if (device) {
       setIsExecuting(true)
+
+      // Set a timeout to prevent the UI from getting stuck if a command takes too long
+      const timeoutId = setTimeout(() => {
+        setIsExecuting(false)
+        setLastError("Command execution timed out. The operation may still be running in the background.")
+      }, 30000) // 30 second timeout
+
       try {
         // Handle special commands
         if (trimmedInput === "help") {
@@ -298,6 +347,7 @@ export function Terminal() {
         setHistory((prev) => [...prev, `Error: ${errorMessage}`, ""])
         setLastError(errorMessage)
       } finally {
+        clearTimeout(timeoutId)
         setIsExecuting(false)
       }
     } else {

@@ -31,6 +31,37 @@ export function AdvancedUsbConnector() {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
   const [selectedConnectionMode, setSelectedConnectionMode] = useState<"normal" | "aggressive" | "persistent">("normal")
 
+  // Add state to track preview mode
+  const [isPreviewMode, setIsPreviewMode] = useState(false)
+  const [isSecureContext, setIsSecureContext] = useState(true)
+
+  // Check if we're in a preview environment or non-secure context
+  useEffect(() => {
+    // Check for secure context
+    setIsSecureContext(window.isSecureContext !== false)
+
+    // Try to access WebUSB to detect permissions policy restrictions
+    const checkWebUsbAccess = async () => {
+      if (!navigator.usb) return
+
+      try {
+        await navigator.usb.getDevices()
+        setIsPreviewMode(false)
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          (error.message.includes("permissions policy") ||
+            error.message.includes("Access to the feature") ||
+            error.message.includes("disallowed by permissions"))
+        ) {
+          setIsPreviewMode(true)
+        }
+      }
+    }
+
+    checkWebUsbAccess()
+  }, [])
+
   // Check WebUSB support on component mount
   useEffect(() => {
     if (navigator.usb) {
@@ -101,6 +132,11 @@ export function AdvancedUsbConnector() {
     setConnectionAttempts((prev) => prev + 1)
 
     try {
+      // Check for preview mode first
+      if (isPreviewMode || !isSecureContext) {
+        throw new Error("WebUSB is blocked in preview mode or non-secure context")
+      }
+
       // Different connection strategies based on selected mode
       if (selectedConnectionMode === "normal") {
         // Standard connection attempt
@@ -173,7 +209,17 @@ export function AdvancedUsbConnector() {
     } catch (error) {
       console.error("Connection error:", error)
       setConnectionProgress(0)
-      // Error is handled by the context
+
+      // Check for permissions policy errors
+      if (
+        error instanceof Error &&
+        (error.message.includes("permissions policy") ||
+          error.message.includes("Access to the feature") ||
+          error.message.includes("disallowed by permissions") ||
+          error.message.includes("preview mode"))
+      ) {
+        setIsPreviewMode(true)
+      }
     } finally {
       setIsConnecting(false)
     }
@@ -189,6 +235,16 @@ export function AdvancedUsbConnector() {
         <CardDescription>Enhanced connection system with automatic troubleshooting</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {(isPreviewMode || !isSecureContext) && (
+          <Alert variant="destructive" className="mb-4 bg-red-900/30 border-red-800">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Preview Mode Detected</AlertTitle>
+            <AlertDescription>
+              WebUSB functionality is restricted in preview environments or non-secure contexts. To use this feature,
+              please deploy the application to a secure HTTPS environment.
+            </AlertDescription>
+          </Alert>
+        )}
         {!isSupported && (
           <Alert variant="destructive" className="bg-red-900/30 border-red-800">
             <AlertCircle className="h-4 w-4" />

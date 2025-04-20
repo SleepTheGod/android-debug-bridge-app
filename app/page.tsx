@@ -1,32 +1,94 @@
+"use client"
+
 import { Terminal } from "@/components/terminal"
 import { DeviceSelector } from "@/components/device-selector"
 import { AdbInfo } from "@/components/adb-info"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FileOperations } from "@/components/file-operations"
+import { PreviewModeNotice } from "@/components/preview-mode-notice"
 import Link from "next/link"
-import { Zap } from "lucide-react"
+import { Zap, AlertTriangle } from "lucide-react"
+import { useState, useEffect } from "react"
 
 export default function Home() {
+  const [isPreviewMode, setIsPreviewMode] = useState(false)
+  const [isSecureContext, setIsSecureContext] = useState(true)
+
+  // Check if we're in a preview environment or non-secure context
+  useEffect(() => {
+    // Check for secure context
+    setIsSecureContext(window.isSecureContext !== false)
+
+    // Try to access WebUSB to detect permissions policy restrictions
+    const checkWebUsbAccess = async () => {
+      if (!navigator.usb) {
+        setIsPreviewMode(false)
+        return
+      }
+
+      try {
+        await navigator.usb.getDevices()
+        setIsPreviewMode(false)
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          (error.message.includes("permissions policy") ||
+            error.message.includes("Access to the feature") ||
+            error.message.includes("disallowed by permissions"))
+        ) {
+          setIsPreviewMode(true)
+        }
+      }
+    }
+
+    checkWebUsbAccess()
+  }, [])
+
   return (
     <main className="flex min-h-screen flex-col p-4 md:p-8 bg-gray-950 text-gray-100">
       <h1 className="text-2xl font-bold mb-6">Android Web Debugger</h1>
 
+      {(isPreviewMode || !isSecureContext) && (
+        <div className="mb-6 p-4 bg-yellow-900/20 border border-yellow-800 rounded-md flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 text-yellow-400 flex-shrink-0" />
+          <div>
+            <h3 className="text-sm font-medium text-yellow-400">Preview Mode Detected</h3>
+            <p className="text-xs text-gray-300 mt-1">
+              WebUSB functionality is restricted in preview environments or non-secure contexts. Some features may not
+              work properly.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2">
         <div className="space-y-4">
-          <AdbInfo />
-          <DeviceSelector />
-          <div className="bg-blue-900/20 border border-blue-800 rounded-md p-4 flex items-center gap-3">
-            <Zap className="h-5 w-5 text-blue-400 flex-shrink-0" />
-            <div>
-              <h3 className="text-sm font-medium text-blue-400">Connection Issues?</h3>
-              <p className="text-xs text-gray-300 mt-1">
-                Try our enhanced connection tool with advanced troubleshooting capabilities.
-              </p>
-              <Link href="/advanced-connection" className="text-xs text-blue-400 hover:text-blue-300 inline-block mt-2">
-                Use Advanced Connection Tool →
-              </Link>
-            </div>
-          </div>
+          {isPreviewMode || !isSecureContext ? (
+            <>
+              <PreviewModeNotice />
+              <AdbInfo />
+            </>
+          ) : (
+            <>
+              <AdbInfo />
+              <DeviceSelector />
+              <div className="bg-blue-900/20 border border-blue-800 rounded-md p-4 flex items-center gap-3">
+                <Zap className="h-5 w-5 text-blue-400 flex-shrink-0" />
+                <div>
+                  <h3 className="text-sm font-medium text-blue-400">Connection Issues?</h3>
+                  <p className="text-xs text-gray-300 mt-1">
+                    Try our enhanced connection tool with advanced troubleshooting capabilities.
+                  </p>
+                  <Link
+                    href="/advanced-connection"
+                    className="text-xs text-blue-400 hover:text-blue-300 inline-block mt-2"
+                  >
+                    Use Advanced Connection Tool →
+                  </Link>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="space-y-4">
