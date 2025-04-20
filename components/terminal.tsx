@@ -17,7 +17,16 @@ export function Terminal() {
   ])
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
-  const { device, executeCommand, isSupported, deviceMode, connectionState, errorMessage } = useDeviceConnection()
+  const {
+    device,
+    executeCommand,
+    isSupported,
+    deviceMode,
+    connectionState,
+    errorMessage,
+    resetConnection,
+    bypassPermissionCheck,
+  } = useDeviceConnection()
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [isExecuting, setIsExecuting] = useState(false)
@@ -42,6 +51,7 @@ export function Terminal() {
         "3. Check for permission prompts on your device",
         "4. Try using a different USB port or cable",
         "5. Restart your device and browser",
+        "6. Type 'advanced-connection' to use our enhanced connection tool",
         "",
         "Need help enabling USB debugging? Type 'guide' or visit the USB debugging guide.",
         "",
@@ -127,6 +137,79 @@ export function Terminal() {
     setHistoryIndex(-1)
     setLastError(null)
 
+    // Handle special commands that don't require a device
+    if (trimmedInput === "guide") {
+      setHistory((prev) => [
+        ...prev,
+        "Opening USB debugging guide...",
+        "You can also access the guide at any time by clicking the link in the device selector.",
+        "",
+      ])
+      // Open the guide in a new tab
+      window.open("/usb-debugging-guide", "_blank")
+      setInput("")
+      return
+    } else if (trimmedInput === "fastboot-guide") {
+      setHistory((prev) => [
+        ...prev,
+        "Opening fastboot mode guide...",
+        "Learn how to boot your device into fastboot mode with device-specific instructions.",
+        "",
+      ])
+      // Open the fastboot guide in a new tab
+      window.open("/fastboot-mode-guide", "_blank")
+      setInput("")
+      return
+    } else if (trimmedInput === "advanced-connection") {
+      setHistory((prev) => [
+        ...prev,
+        "Opening advanced connection tool...",
+        "This tool provides enhanced connection capabilities with automatic troubleshooting.",
+        "",
+      ])
+      // Open the advanced connection tool in a new tab
+      window.open("/advanced-connection", "_blank")
+      setInput("")
+      return
+    } else if (trimmedInput === "clear") {
+      setHistory(["Terminal cleared", ""])
+      setInput("")
+      return
+    } else if (trimmedInput === "reset-connection" && device) {
+      setHistory((prev) => [...prev, "Resetting USB connection...", ""])
+      try {
+        await resetConnection()
+        setHistory((prev) => [...prev, "USB connection reset successful. Try reconnecting your device.", ""])
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        setHistory((prev) => [...prev, `Error: ${errorMessage}`, ""])
+        setLastError(errorMessage)
+      }
+      setInput("")
+      return
+    } else if (trimmedInput === "bypass-permission") {
+      setHistory((prev) => [...prev, "Attempting to use previously authorized device...", ""])
+      try {
+        const result = await bypassPermissionCheck()
+        if (result) {
+          setHistory((prev) => [...prev, "Successfully connected to previously authorized device.", ""])
+        } else {
+          setHistory((prev) => [
+            ...prev,
+            "No previously authorized device found or connection failed.",
+            "Please connect your device using the standard method.",
+            "",
+          ])
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        setHistory((prev) => [...prev, `Error: ${errorMessage}`, ""])
+        setLastError(errorMessage)
+      }
+      setInput("")
+      return
+    }
+
     if (device) {
       setIsExecuting(true)
       try {
@@ -147,7 +230,13 @@ export function Terminal() {
               "  reboot bootloader - Reboot to bootloader",
               "  reboot recovery - Reboot to recovery",
               "  reboot sideload - Reboot to sideload mode",
+              "  reset-connection - Reset USB connection if stuck",
               "  clear - Clear terminal",
+              "",
+              "Guides and Tools:",
+              "  guide - Open USB debugging guide",
+              "  fastboot-guide - Open fastboot mode guide",
+              "  advanced-connection - Open advanced connection tool",
               "",
             ])
           } else if (deviceMode === "fastboot") {
@@ -165,7 +254,13 @@ export function Terminal() {
               "  oem device-info - Get device info",
               "  oem unlock - Unlock bootloader (if allowed)",
               "  oem lock - Lock bootloader",
+              "  reset-connection - Reset USB connection if stuck",
               "  clear - Clear terminal",
+              "",
+              "Guides and Tools:",
+              "  guide - Open USB debugging guide",
+              "  fastboot-guide - Open fastboot mode guide",
+              "  advanced-connection - Open advanced connection tool",
               "",
             ])
           } else if (deviceMode === "recovery") {
@@ -176,23 +271,18 @@ export function Terminal() {
               "  sideload <file> - Sideload OTA package (not fully implemented)",
               "  reboot - Reboot device to system",
               "  reboot bootloader - Reboot to bootloader",
+              "  reset-connection - Reset USB connection if stuck",
               "  clear - Clear terminal",
+              "",
+              "Guides and Tools:",
+              "  guide - Open USB debugging guide",
+              "  fastboot-guide - Open fastboot mode guide",
+              "  advanced-connection - Open advanced connection tool",
               "",
             ])
           } else {
             setHistory((prev) => [...prev, "Unknown device mode. Please reconnect.", ""])
           }
-        } else if (trimmedInput === "guide") {
-          setHistory((prev) => [
-            ...prev,
-            "Opening USB debugging guide...",
-            "You can also access the guide at any time by clicking the link in the device selector.",
-            "",
-          ])
-          // Open the guide in a new tab
-          window.open("/usb-debugging-guide", "_blank")
-        } else if (trimmedInput === "clear") {
-          setHistory(["Terminal cleared", ""])
         } else {
           try {
             const result = await executeCommand(trimmedInput)
@@ -211,7 +301,12 @@ export function Terminal() {
         setIsExecuting(false)
       }
     } else {
-      setHistory((prev) => [...prev, "No device connected. Please connect a device first.", ""])
+      setHistory((prev) => [
+        ...prev,
+        "No device connected. Please connect a device first.",
+        "Type 'advanced-connection' to use our enhanced connection tool.",
+        "",
+      ])
     }
 
     setInput("")
@@ -340,7 +435,7 @@ export function Terminal() {
           onKeyDown={handleKeyDown}
           className="flex-1 bg-transparent outline-none font-mono"
           placeholder={device ? `Enter ${deviceMode} command...` : "Connect a device first..."}
-          disabled={!device || !isSupported || isExecuting}
+          disabled={isExecuting}
           autoComplete="off"
         />
         <div className="flex gap-1">

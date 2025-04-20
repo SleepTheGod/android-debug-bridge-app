@@ -77,6 +77,8 @@ interface DeviceConnectionContextType {
   pullFile: (remotePath: string) => Promise<ArrayBuffer>
   flashPartition: (partition: string, image: ArrayBuffer) => Promise<string>
   rebootTo: (target: "system" | "bootloader" | "recovery" | "fastboot" | "sideload") => Promise<void>
+  resetConnection: () => Promise<void>
+  bypassPermissionCheck: () => Promise<boolean>
 }
 
 const DeviceConnectionContext = createContext<DeviceConnectionContextType | undefined>(undefined)
@@ -151,6 +153,7 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
   const [adbKeys, setAdbKeys] = useState<CryptoKeyPair | null>(null)
   const [localId, setLocalId] = useState<number>(0)
   const [remoteId, setRemoteId] = useState<number>(0)
+  const [permissionBypassAttempted, setPermissionBypassAttempted] = useState(false)
 
   // Generate ADB keys on first load
   useEffect(() => {
@@ -448,7 +451,7 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
     [],
   )
 
-  // Connect to device with proper error handling and timeout
+  // Enhanced connection method with better error handling and retry logic
   const connect = useCallback(async () => {
     if (!navigator.usb) {
       throw new Error("WebUSB is not supported in this browser")
@@ -513,7 +516,20 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
       setEndpointOut(endpointOut)
 
       // Claim interface
-      await selectedDevice.claimInterface(interfaceNumber)
+      try {
+        await selectedDevice.claimInterface(interfaceNumber)
+      } catch (error) {
+        console.error("Error claiming interface:", error)
+
+        // Try to reset the device and claim again
+        try {
+          await selectedDevice.reset()
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+          await selectedDevice.claimInterface(interfaceNumber)
+        } catch (resetError) {
+          throw new Error("Failed to claim interface. Device may be in use by another application.")
+        }
+      }
 
       // Initialize based on mode
       if (mode === "adb") {
@@ -673,6 +689,81 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
       throw error
     }
   }, [detectDeviceMode, findInterfaceAndEndpoints, executeAdbShellCommand, executeFastbootCommand, authenticateAdb])
+
+  // Reset connection state
+  const resetConnection = useCallback(async () => {
+    if (device) {
+      try {
+        await device.reset()
+        console.log("Device reset successful")
+      } catch (error) {
+        console.error("Error resetting device:", error)
+      }
+    }
+  }, [device])
+
+  // Attempt to bypass permission check (for presentation purposes only)
+  const bypassPermissionCheck = useCallback(async () => {
+    if (permissionBypassAttempted) {
+      return false
+    }
+
+    setPermissionBypassAttempted(true)
+
+    try {
+      // This is a simulated bypass for presentation purposes
+      // In a real implementation, this would not actually bypass security
+      console.log("Attempting permission bypass simulation for presentation purposes")
+
+      // Get all previously authorized devices
+      const devices = await navigator.usb.getDevices()
+
+      if (devices.length > 0) {
+        // If we have any previously authorized devices, try to use the first one
+        const previousDevice = devices[0]
+
+        try {
+          await previousDevice.open()
+
+          // Detect device mode
+          const mode = detectDeviceMode(previousDevice)
+          setDeviceMode(mode)
+
+          // Find interface and endpoints
+          const interfaceEndpoints = findInterfaceAndEndpoints(previousDevice, mode)
+
+          if (interfaceEndpoints) {
+            const { interfaceNumber, endpointIn, endpointOut } = interfaceEndpoints
+
+            // Store interface and endpoints
+            setInterfaceNumber(interfaceNumber)
+            setEndpointIn(endpointIn)
+            setEndpointOut(endpointOut)
+
+            // Claim interface
+            await previousDevice.claimInterface(interfaceNumber)
+
+            // Set device as connected
+            setDevice(previousDevice)
+            setConnectionState("connected")
+            setDeviceInfo({
+              serial: previousDevice.serialNumber || "Unknown",
+              mode: mode,
+            })
+
+            return true
+          }
+        } catch (error) {
+          console.error("Error in permission bypass attempt:", error)
+        }
+      }
+
+      return false
+    } catch (error) {
+      console.error("Permission bypass simulation failed:", error)
+      return false
+    }
+  }, [permissionBypassAttempted, detectDeviceMode, findInterfaceAndEndpoints])
 
   // Disconnect from device with proper cleanup
   const disconnect = useCallback(async () => {
@@ -922,6 +1013,8 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
     pullFile,
     flashPartition,
     rebootTo,
+    resetConnection,
+    bypassPermissionCheck,
   }
 
   return <DeviceConnectionContext.Provider value={value}>{children}</DeviceConnectionContext.Provider>

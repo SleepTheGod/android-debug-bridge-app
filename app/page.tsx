@@ -4,6 +4,7 @@ import { AdbInfo } from "@/components/adb-info"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FileOperations } from "@/components/file-operations"
 import Link from "next/link"
+import { Zap } from "lucide-react"
 
 export default function Home() {
   return (
@@ -14,6 +15,18 @@ export default function Home() {
         <div className="space-y-4">
           <AdbInfo />
           <DeviceSelector />
+          <div className="bg-blue-900/20 border border-blue-800 rounded-md p-4 flex items-center gap-3">
+            <Zap className="h-5 w-5 text-blue-400 flex-shrink-0" />
+            <div>
+              <h3 className="text-sm font-medium text-blue-400">Connection Issues?</h3>
+              <p className="text-xs text-gray-300 mt-1">
+                Try our enhanced connection tool with advanced troubleshooting capabilities.
+              </p>
+              <Link href="/advanced-connection" className="text-xs text-blue-400 hover:text-blue-300 inline-block mt-2">
+                Use Advanced Connection Tool →
+              </Link>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -38,11 +51,18 @@ export default function Home() {
         </p>
         <p>This tool requires a compatible browser with WebUSB support and appropriate permissions.</p>
         <p>For full ADB functionality, consider using the native Android Debug Bridge tool.</p>
-        <p className="mt-2">
-          <Link href="/usb-debugging-guide" className="text-blue-400 hover:text-blue-300">
-            Having trouble connecting? View our USB debugging setup guide →
-          </Link>
-        </p>
+        <div className="mt-2 space-y-1">
+          <p>
+            <Link href="/usb-debugging-guide" className="text-blue-400 hover:text-blue-300">
+              Having trouble connecting? View our USB debugging setup guide →
+            </Link>
+          </p>
+          <p>
+            <Link href="/fastboot-mode-guide" className="text-blue-400 hover:text-blue-300">
+              Need to access fastboot? View our fastboot mode guide →
+            </Link>
+          </p>
+        </div>
       </div>
     </main>
   )

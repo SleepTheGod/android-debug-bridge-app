@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Info } from "lucide-react"
 
 export function AdbInfo() {
   return (
@@ -249,6 +250,15 @@ export function AdbInfo() {
                     <li>Connect your device via USB cable</li>
                     <li>Click "Connect Device" and select your device</li>
                   </ol>
+                  <div className="mt-2 pt-2 border-t border-gray-700">
+                    <Link
+                      href="/fastboot-mode-guide"
+                      className="text-blue-400 hover:text-blue-300 flex items-center text-xs"
+                    >
+                      <Info className="h-3 w-3 mr-1" />
+                      View detailed fastboot mode guide with device-specific instructions
+                    </Link>
+                  </div>
                 </AccordionContent>
               </AccordionItem>
 
