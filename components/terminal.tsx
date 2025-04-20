@@ -33,7 +33,17 @@ export function Terminal() {
         "",
       ])
     } else if (connectionState === "error" && errorMessage) {
-      setHistory((prev) => [...prev, `Connection error: ${errorMessage}`, ""])
+      setHistory((prev) => [
+        ...prev,
+        `Connection error: ${errorMessage}`,
+        "Troubleshooting tips:",
+        "1. Make sure USB debugging is enabled on your device",
+        "2. Disconnect and reconnect your USB cable",
+        "3. Check for permission prompts on your device",
+        "4. Try using a different USB port or cable",
+        "5. Restart your device and browser",
+        "",
+      ])
     }
   }, [device, deviceMode, connectionState, errorMessage])
 

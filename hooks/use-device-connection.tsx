@@ -654,7 +654,22 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
     } catch (error) {
       console.error("Error connecting to device:", error)
       setConnectionState("error")
-      setErrorMessage(error instanceof Error ? error.message : "Unknown error")
+
+      // Provide more specific error messages based on the error type
+      if (error instanceof DOMException && error.message.includes("Access denied")) {
+        setErrorMessage(
+          "USB access denied. Please reconnect your device and make sure to click 'Allow' on the permission prompt.",
+        )
+      } else if (error instanceof DOMException && error.message.includes("No device selected")) {
+        setErrorMessage("No device selected. Please try again and select your device from the list.")
+      } else if (error instanceof DOMException && error.message.includes("Device unavailable")) {
+        setErrorMessage("Device unavailable. Please disconnect and reconnect your device, then try again.")
+      } else if (error instanceof DOMException && error.message.includes("Transfer failed")) {
+        setErrorMessage("USB transfer failed. Please check your USB connection and try again.")
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : "Unknown error connecting to device")
+      }
+
       throw error
     }
   }, [detectDeviceMode, findInterfaceAndEndpoints, executeAdbShellCommand, executeFastbootCommand, authenticateAdb])

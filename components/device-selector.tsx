@@ -25,6 +25,7 @@ export function DeviceSelector() {
   const { device, connect, disconnect, deviceInfo, isSupported, deviceMode, connectionState, errorMessage, rebootTo } =
     useDeviceConnection()
   const [isConnecting, setIsConnecting] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
 
   const handleConnect = async () => {
     setIsConnecting(true)
@@ -32,6 +33,7 @@ export function DeviceSelector() {
       await connect()
     } catch (err) {
       // Error is handled by the context
+      setRetryCount((prev) => prev + 1)
     } finally {
       setIsConnecting(false)
     }
@@ -78,9 +80,36 @@ export function DeviceSelector() {
         )}
 
         {connectionState === "error" && errorMessage && (
-          <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-md flex items-center gap-2 text-sm">
-            <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0" />
-            <span>{errorMessage}</span>
+          <div className="mb-4 space-y-2">
+            <div className="p-3 bg-red-900/30 border border-red-800 rounded-md flex items-center gap-2 text-sm">
+              <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+
+            <div className="p-3 bg-gray-800 rounded-md text-sm">
+              <h4 className="font-medium mb-2">Troubleshooting steps:</h4>
+              <ol className="list-decimal pl-5 space-y-1 text-gray-300">
+                <li>Disconnect and reconnect your USB cable</li>
+                <li>Make sure USB debugging is enabled in Developer Options</li>
+                <li>Check for a permission prompt on your device and tap "Allow"</li>
+                <li>Try a different USB port or cable</li>
+                <li>Restart your device and browser</li>
+              </ol>
+
+              <Button onClick={handleConnect} className="w-full mt-3" disabled={isConnecting}>
+                {isConnecting ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    Retrying...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Retry Connection
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         )}
 

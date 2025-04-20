@@ -66,6 +66,44 @@ export function AdbInfo() {
                 </AccordionContent>
               </AccordionItem>
 
+              <AccordionItem value="webusb-permissions">
+                <AccordionTrigger className="text-sm font-medium py-2">WebUSB Permissions Guide</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-2">
+                    <p>
+                      WebUSB requires explicit permission to access your device. Here's how to ensure proper access:
+                    </p>
+
+                    <ol className="list-decimal pl-5 space-y-2">
+                      <li>
+                        When you click "Connect Device", your browser will show a device selection dialog
+                        <ul className="list-disc pl-5 mt-1 text-xs text-gray-400">
+                          <li>Select your device from the list</li>
+                          <li>If your device doesn't appear, check USB debugging is enabled</li>
+                        </ul>
+                      </li>
+                      <li>
+                        After selecting your device, check your phone screen
+                        <ul className="list-disc pl-5 mt-1 text-xs text-gray-400">
+                          <li>A prompt asking "Allow USB debugging?" should appear</li>
+                          <li>Check "Always allow from this computer" for convenience</li>
+                          <li>Tap "Allow" to grant permission</li>
+                        </ul>
+                      </li>
+                      <li>
+                        If you get "Access denied" errors:
+                        <ul className="list-disc pl-5 mt-1 text-xs text-gray-400">
+                          <li>Disconnect and reconnect your device</li>
+                          <li>Go to chrome://settings/content/usbDevices to reset permissions</li>
+                          <li>Try a different USB cable or port</li>
+                          <li>Restart your device and browser</li>
+                        </ul>
+                      </li>
+                    </ol>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
               <AccordionItem value="adb-commands">
                 <AccordionTrigger className="text-sm font-medium py-2">Useful ADB Commands</AccordionTrigger>
                 <AccordionContent>
