@@ -7,8 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FileOperations } from "@/components/file-operations"
 import { PreviewModeNotice } from "@/components/preview-mode-notice"
 import Link from "next/link"
-import { Zap, AlertTriangle } from "lucide-react"
+import { Zap, AlertTriangle, TestTube2 } from "lucide-react"
 import { useState, useEffect } from "react"
+import { Button } from "@/components/ui/button"
 
 export default function Home() {
   const [isPreviewMode, setIsPreviewMode] = useState(false)
@@ -79,12 +80,17 @@ export default function Home() {
                   <p className="text-xs text-gray-300 mt-1">
                     Try our enhanced connection tool with advanced troubleshooting capabilities.
                   </p>
-                  <Link
-                    href="/advanced-connection"
-                    className="text-xs text-blue-400 hover:text-blue-300 inline-block mt-2"
-                  >
-                    Use Advanced Connection Tool →
-                  </Link>
+                  <div className="flex gap-2 mt-2">
+                    <Link
+                      href="/advanced-connection"
+                      className="text-xs text-blue-400 hover:text-blue-300 inline-block"
+                    >
+                      Advanced Connection Tool →
+                    </Link>
+                    <Link href="/connection-tester" className="text-xs text-blue-400 hover:text-blue-300 inline-block">
+                      Connection Tester →
+                    </Link>
+                  </div>
                 </div>
               </div>
             </>
@@ -104,6 +110,17 @@ export default function Home() {
               <FileOperations />
             </TabsContent>
           </Tabs>
+
+          {!isPreviewMode && !isSecureContext && (
+            <div className="flex justify-center">
+              <Link href="/connection-tester">
+                <Button variant="outline" size="sm" className="flex items-center gap-2">
+                  <TestTube2 className="h-4 w-4" />
+                  Test Connection Flow
+                </Button>
+              </Link>
+            </div>
+          )}
         </div>
       </div>
 
@@ -122,6 +139,11 @@ export default function Home() {
           <p>
             <Link href="/fastboot-mode-guide" className="text-blue-400 hover:text-blue-300">
               Need to access fastboot? View our fastboot mode guide →
+            </Link>
+          </p>
+          <p>
+            <Link href="/connection-tester" className="text-blue-400 hover:text-blue-300">
+              Want to test connection flows? Try our connection tester →
             </Link>
           </p>
         </div>

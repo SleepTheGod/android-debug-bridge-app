@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useDeviceConnection } from "@/hooks/use-device-connection"
@@ -18,18 +18,33 @@ import {
   HardDrive,
   Info,
   ExternalLink,
+  CheckCircle,
+  HelpCircle,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import Link from "next/link"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export function DeviceSelector() {
-  const { device, connect, disconnect, deviceInfo, isSupported, deviceMode, connectionState, errorMessage, rebootTo } =
-    useDeviceConnection()
+  const {
+    device,
+    connect,
+    disconnect,
+    deviceInfo,
+    isSupported,
+    deviceMode,
+    connectionState,
+    errorMessage,
+    rebootTo,
+    retryConnection,
+    isWaitingForPermission,
+  } = useDeviceConnection()
+
   const [isConnecting, setIsConnecting] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
-  // Add a new state to track permissions policy errors
   const [isPermissionsPolicyBlocked, setIsPermissionsPolicyBlocked] = useState(false)
+  const [permissionCheckTimer, setPermissionCheckTimer] = useState<NodeJS.Timeout | null>(null)
 
   // Update the handleConnect function
   const handleConnect = async () => {
@@ -54,6 +69,19 @@ export function DeviceSelector() {
     }
   }
 
+  // Handle retry connection
+  const handleRetryConnection = async () => {
+    setIsConnecting(true)
+    try {
+      await retryConnection()
+    } catch (err) {
+      // Error is handled by the context
+      setRetryCount((prev) => prev + 1)
+    } finally {
+      setIsConnecting(false)
+    }
+  }
+
   const handleReboot = async (target: "system" | "bootloader" | "recovery" | "fastboot" | "sideload") => {
     try {
       await rebootTo(target)
@@ -61,6 +89,40 @@ export function DeviceSelector() {
       // Error is handled by the context
     }
   }
+
+  // Set up a timer to check for permission status
+  useEffect(() => {
+    if (isWaitingForPermission) {
+      // Clear any existing timer
+      if (permissionCheckTimer) {
+        clearTimeout(permissionCheckTimer)
+      }
+
+      // Set a new timer to retry connection after a delay
+      const timer = setTimeout(() => {
+        handleRetryConnection()
+      }, 5000) // Check every 5 seconds
+
+      setPermissionCheckTimer(timer)
+
+      // Clean up on unmount or when permission state changes
+      return () => {
+        if (timer) clearTimeout(timer)
+      }
+    } else if (permissionCheckTimer) {
+      clearTimeout(permissionCheckTimer)
+      setPermissionCheckTimer(null)
+    }
+  }, [isWaitingForPermission])
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (permissionCheckTimer) {
+        clearTimeout(permissionCheckTimer)
+      }
+    }
+  }, [])
 
   const getModeBadge = () => {
     switch (deviceMode) {
@@ -113,6 +175,33 @@ export function DeviceSelector() {
           </div>
         )}
 
+        {isWaitingForPermission && (
+          <Alert className="mb-4 bg-blue-900/30 border-blue-800 animate-pulse">
+            <Info className="h-4 w-4" />
+            <AlertTitle>Waiting for Permission</AlertTitle>
+            <AlertDescription>
+              Please check your Android device for a USB debugging permission prompt and tap "Allow".
+              <div className="mt-2 text-xs">
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Make sure your device screen is unlocked</li>
+                  <li>Look for a notification or popup on your device</li>
+                  <li>Check "Always allow from this computer" for convenience</li>
+                </ul>
+              </div>
+              <div className="mt-2 flex justify-between items-center">
+                <Link href="/permission-guide" className="text-xs text-blue-400 hover:text-blue-300 flex items-center">
+                  <HelpCircle className="h-3 w-3 mr-1" />
+                  View device-specific permission guide
+                </Link>
+                <Button variant="outline" size="sm" onClick={handleRetryConnection} className="h-7 text-xs">
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Retry
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {isPermissionsPolicyBlocked && (
           <div className="mt-4">
             <Button
@@ -130,7 +219,7 @@ export function DeviceSelector() {
           </div>
         )}
 
-        {connectionState === "error" && errorMessage && (
+        {connectionState === "error" && errorMessage && !isWaitingForPermission && (
           <div className="mb-4 space-y-2">
             <div className="p-3 bg-red-900/30 border border-red-800 rounded-md flex items-center gap-2 text-sm">
               <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0" />
@@ -147,15 +236,24 @@ export function DeviceSelector() {
                 <li>Restart your device and browser</li>
               </ol>
 
-              <Link
-                href="/usb-debugging-guide"
-                className="text-blue-400 hover:text-blue-300 flex items-center justify-center mt-3 text-xs"
-              >
-                <Info className="h-3 w-3 mr-1" />
-                View detailed USB debugging setup guide
-              </Link>
+              <div className="flex flex-col sm:flex-row gap-2 mt-3">
+                <Link
+                  href="/usb-debugging-guide"
+                  className="text-blue-400 hover:text-blue-300 flex items-center justify-center text-xs"
+                >
+                  <Info className="h-3 w-3 mr-1" />
+                  USB debugging guide
+                </Link>
+                <Link
+                  href="/permission-guide"
+                  className="text-blue-400 hover:text-blue-300 flex items-center justify-center text-xs"
+                >
+                  <Info className="h-3 w-3 mr-1" />
+                  Permission guide
+                </Link>
+              </div>
 
-              <Button onClick={handleConnect} className="w-full mt-3" disabled={isConnecting}>
+              <Button onClick={handleRetryConnection} className="w-full mt-3" disabled={isConnecting}>
                 {isConnecting ? (
                   <>
                     <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -176,7 +274,7 @@ export function DeviceSelector() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-green-400 text-sm">
-                <Link className="h-4 w-4" />
+                <CheckCircle className="h-4 w-4" />
                 <span>Connected to device</span>
               </div>
               {getModeBadge()}
@@ -310,13 +408,18 @@ export function DeviceSelector() {
         ) : (
           <Button
             onClick={handleConnect}
-            disabled={isConnecting || !isSupported || connectionState === "connecting"}
+            disabled={isConnecting || !isSupported || connectionState === "connecting" || isWaitingForPermission}
             className="w-full"
           >
             {isConnecting || connectionState === "connecting" ? (
               <>
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                 Connecting...
+              </>
+            ) : isWaitingForPermission ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Waiting for Permission...
               </>
             ) : (
               <>

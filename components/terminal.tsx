@@ -5,8 +5,9 @@ import type React from "react"
 import { useState, useEffect, useRef } from "react"
 import { useDeviceConnection } from "@/hooks/use-device-connection"
 import { Button } from "@/components/ui/button"
-import { ChevronUp, ChevronDown, RotateCw, AlertCircle, TerminalIcon } from "lucide-react"
+import { ChevronUp, ChevronDown, RotateCw, AlertCircle, TerminalIcon, Info } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export function Terminal() {
   const [input, setInput] = useState("")
@@ -26,6 +27,8 @@ export function Terminal() {
     errorMessage,
     resetConnection,
     bypassPermissionCheck,
+    retryConnection,
+    isWaitingForPermission,
   } = useDeviceConnection()
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -96,6 +99,15 @@ export function Terminal() {
         "6. Type 'advanced-connection' to use our enhanced connection tool",
         "",
         "Need help enabling USB debugging? Type 'guide' or visit the USB debugging guide.",
+        "",
+      ])
+    } else if (connectionState === "waiting_permission") {
+      setHistory((prev) => [
+        ...prev,
+        "Waiting for USB debugging permission...",
+        "Please check your Android device for a permission prompt and tap 'Allow'.",
+        "Make sure your device is unlocked and the screen is on.",
+        "You can check 'Always allow from this computer' for convenience.",
         "",
       ])
     }
@@ -229,6 +241,18 @@ export function Terminal() {
       }
       setInput("")
       return
+    } else if (trimmedInput === "retry-connection") {
+      setHistory((prev) => [...prev, "Retrying connection...", ""])
+      try {
+        await retryConnection()
+        setHistory((prev) => [...prev, "Connection retry initiated.", ""])
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        setHistory((prev) => [...prev, `Error: ${errorMessage}`, ""])
+        setLastError(errorMessage)
+      }
+      setInput("")
+      return
     } else if (trimmedInput === "bypass-permission") {
       setHistory((prev) => [...prev, "Attempting to use previously authorized device...", ""])
       try {
@@ -280,6 +304,7 @@ export function Terminal() {
               "  reboot recovery - Reboot to recovery",
               "  reboot sideload - Reboot to sideload mode",
               "  reset-connection - Reset USB connection if stuck",
+              "  retry-connection - Retry connection if permission was denied",
               "  clear - Clear terminal",
               "",
               "Guides and Tools:",
@@ -304,6 +329,7 @@ export function Terminal() {
               "  oem unlock - Unlock bootloader (if allowed)",
               "  oem lock - Lock bootloader",
               "  reset-connection - Reset USB connection if stuck",
+              "  retry-connection - Retry connection if permission was denied",
               "  clear - Clear terminal",
               "",
               "Guides and Tools:",
@@ -321,6 +347,7 @@ export function Terminal() {
               "  reboot - Reboot device to system",
               "  reboot bootloader - Reboot to bootloader",
               "  reset-connection - Reset USB connection if stuck",
+              "  retry-connection - Retry connection if permission was denied",
               "  clear - Clear terminal",
               "",
               "Guides and Tools:",
@@ -436,6 +463,11 @@ export function Terminal() {
       return <span className="text-blue-400">{line}</span>
     }
 
+    // Color permission messages
+    if (line.includes("permission") || line.includes("Permission")) {
+      return <span className="text-yellow-400">{line}</span>
+    }
+
     return line
   }
 
@@ -468,6 +500,15 @@ export function Terminal() {
           </div>
         ))}
         {isExecuting && <div className="text-yellow-400 animate-pulse">Executing command...</div>}
+        {isWaitingForPermission && (
+          <Alert className="mt-2 bg-blue-900/30 border-blue-800 animate-pulse">
+            <Info className="h-4 w-4" />
+            <AlertTitle>Waiting for Permission</AlertTitle>
+            <AlertDescription>
+              Please check your Android device for a USB debugging permission prompt and tap "Allow".
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
       {lastError && (
         <div className="bg-red-900/30 border-t border-red-800 px-4 py-2 text-sm flex items-center gap-2">
@@ -485,7 +526,7 @@ export function Terminal() {
           onKeyDown={handleKeyDown}
           className="flex-1 bg-transparent outline-none font-mono"
           placeholder={device ? `Enter ${deviceMode} command...` : "Connect a device first..."}
-          disabled={isExecuting}
+          disabled={isExecuting || isWaitingForPermission}
           autoComplete="off"
         />
         <div className="flex gap-1">

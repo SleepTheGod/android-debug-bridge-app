@@ -60,7 +60,7 @@ interface DeviceInfo {
 }
 
 // Add proper connection state tracking
-type ConnectionState = "disconnected" | "connecting" | "authenticating" | "connected" | "error"
+type ConnectionState = "disconnected" | "connecting" | "authenticating" | "connected" | "error" | "waiting_permission"
 
 // Update the context type to include more functionality
 interface DeviceConnectionContextType {
@@ -79,6 +79,8 @@ interface DeviceConnectionContextType {
   rebootTo: (target: "system" | "bootloader" | "recovery" | "fastboot" | "sideload") => Promise<void>
   resetConnection: () => Promise<void>
   bypassPermissionCheck: () => Promise<boolean>
+  retryConnection: () => Promise<void>
+  isWaitingForPermission: boolean
 }
 
 const DeviceConnectionContext = createContext<DeviceConnectionContextType | undefined>(undefined)
@@ -154,6 +156,10 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
   const [localId, setLocalId] = useState<number>(0)
   const [remoteId, setRemoteId] = useState<number>(0)
   const [permissionBypassAttempted, setPermissionBypassAttempted] = useState(false)
+  const [isWaitingForPermission, setIsWaitingForPermission] = useState(false)
+  const [lastConnectionAttempt, setLastConnectionAttempt] = useState<number>(0)
+  const [connectionAttempts, setConnectionAttempts] = useState<number>(0)
+  const [lastSelectedDevice, setLastSelectedDevice] = useState<USBDevice | null>(null)
 
   // Generate ADB keys on first load
   useEffect(() => {
@@ -451,6 +457,43 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
     [],
   )
 
+  // Check if a device is already authorized
+  const checkDeviceAuthorization = useCallback(
+    async (device: USBDevice): Promise<boolean> => {
+      try {
+        // Try to open the device
+        await device.open()
+
+        // If we can open it without errors, it might be authorized
+        // Try to claim an interface to be sure
+        const mode = detectDeviceMode(device)
+        const interfaceEndpoints = findInterfaceAndEndpoints(device, mode)
+
+        if (interfaceEndpoints) {
+          try {
+            await device.claimInterface(interfaceEndpoints.interfaceNumber)
+            // If we got here, the device is authorized
+            await device.releaseInterface(interfaceEndpoints.interfaceNumber)
+            await device.close()
+            return true
+          } catch (error) {
+            // If we can't claim the interface, it might be in use or not authorized
+            await device.close()
+            return false
+          }
+        }
+
+        await device.close()
+        return false
+      } catch (error) {
+        // If we can't open the device, it's not authorized
+        console.log("Device authorization check failed:", error)
+        return false
+      }
+    },
+    [detectDeviceMode, findInterfaceAndEndpoints],
+  )
+
   // Enhanced connection method with better error handling and retry logic
   const connect = useCallback(async () => {
     if (!navigator.usb) {
@@ -459,6 +502,9 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
 
     setConnectionState("connecting")
     setErrorMessage(null)
+    setIsWaitingForPermission(false)
+    setConnectionAttempts((prev) => prev + 1)
+    setLastConnectionAttempt(Date.now())
 
     try {
       // Check if we're in a secure context
@@ -484,8 +530,31 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
         }
       }
 
+      // First, check if we have any previously authorized devices
+      const previousDevices = await navigator.usb.getDevices()
+
+      // If we have previously authorized devices, try to use them first
+      if (previousDevices.length > 0) {
+        for (const prevDevice of previousDevices) {
+          try {
+            const isAuthorized = await checkDeviceAuthorization(prevDevice)
+
+            if (isAuthorized) {
+              // Use this already authorized device
+              await connectToDevice(prevDevice)
+              return
+            }
+          } catch (error) {
+            console.log("Error checking previously authorized device:", error)
+            // Continue to the next device or request a new one
+          }
+        }
+      }
+
       // Request a device with comprehensive filters
       try {
+        setIsWaitingForPermission(true)
+
         const selectedDevice = await navigator.usb.requestDevice({
           filters: [
             // ADB filter
@@ -510,7 +579,73 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
           ],
         })
 
-        // Rest of the connection code...
+        setIsWaitingForPermission(false)
+        setLastSelectedDevice(selectedDevice)
+
+        // Connect to the selected device
+        await connectToDevice(selectedDevice)
+      } catch (error) {
+        setIsWaitingForPermission(false)
+
+        // Check specifically for permissions policy errors
+        if (
+          error instanceof DOMException &&
+          (error.message.includes("permissions policy") || error.message.includes("Access to the feature"))
+        ) {
+          throw new Error(
+            "USB access is blocked by permissions policy. This may be due to preview mode restrictions or Content-Security-Policy settings.",
+          )
+        }
+
+        // Check for user cancellation
+        if (error instanceof DOMException && error.name === "NotFoundError") {
+          throw new Error("No device selected. Please try again and select your device from the list.")
+        }
+
+        throw error
+      }
+    } catch (error) {
+      console.error("Error connecting to device:", error)
+      setConnectionState("error")
+
+      // Provide more specific error messages based on the error type
+      if (error instanceof Error && error.message.includes("permissions policy")) {
+        setErrorMessage(
+          "USB access is blocked by permissions policy. This feature requires a deployed HTTPS environment and may not work in preview mode.",
+        )
+      } else if (error instanceof DOMException && error.name === "SecurityError") {
+        // This is likely a permission issue, but not necessarily a denial
+        setErrorMessage("USB security error. Please make sure USB debugging is enabled on your device and try again.")
+      } else if (error instanceof DOMException && error.message.includes("No device selected")) {
+        setErrorMessage("No device selected. Please try again and select your device from the list.")
+      } else if (error instanceof DOMException && error.message.includes("Device unavailable")) {
+        setErrorMessage("Device unavailable. Please disconnect and reconnect your device, then try again.")
+      } else if (error instanceof DOMException && error.message.includes("Transfer failed")) {
+        setErrorMessage("USB transfer failed. Please check your USB connection and try again.")
+      } else if (error instanceof Error && error.message.includes("Access denied")) {
+        // This is a specific case where the device was found but permission was denied
+        setErrorMessage(
+          "USB device found but permission was denied. Please reconnect your device and accept the permission prompt on your Android device.",
+        )
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : "Unknown error connecting to device")
+      }
+
+      throw error
+    }
+  }, [
+    detectDeviceMode,
+    findInterfaceAndEndpoints,
+    executeAdbShellCommand,
+    executeFastbootCommand,
+    authenticateAdb,
+    checkDeviceAuthorization,
+  ])
+
+  // Helper function to connect to a specific device
+  const connectToDevice = useCallback(
+    async (selectedDevice: USBDevice) => {
+      try {
         // Open device with timeout
         const openPromise = selectedDevice.open()
         const timeoutPromise = new Promise((_, reject) =>
@@ -552,6 +687,11 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
             await new Promise((resolve) => setTimeout(resolve, 1000))
             await selectedDevice.claimInterface(interfaceNumber)
           } catch (resetError) {
+            // Check if this is a permission issue
+            if (resetError instanceof DOMException && resetError.name === "SecurityError") {
+              throw new Error("USB permission required. Please accept the permission prompt on your Android device.")
+            }
+
             throw new Error("Failed to claim interface. Device may be in use by another application.")
           }
         }
@@ -698,46 +838,46 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
 
         throw new Error("Unsupported device mode")
       } catch (error) {
-        // Check specifically for permissions policy errors
-        if (
-          error instanceof DOMException &&
-          (error.message.includes("permissions policy") || error.message.includes("Access to the feature"))
-        ) {
-          throw new Error(
-            "USB access is blocked by permissions policy. This may be due to preview mode restrictions or Content-Security-Policy settings.",
-          )
+        // Check for permission issues
+        if (error instanceof DOMException && error.name === "SecurityError") {
+          setConnectionState("waiting_permission")
+          setIsWaitingForPermission(true)
+          throw new Error("USB permission required. Please check your Android device for a permission prompt.")
         }
+
         throw error
       }
+    },
+    [detectDeviceMode, findInterfaceAndEndpoints, executeAdbShellCommand, executeFastbootCommand, authenticateAdb],
+  )
 
-      // The rest of the existing connection code...
-      // ...
-    } catch (error) {
-      console.error("Error connecting to device:", error)
-      setConnectionState("error")
+  // Retry connection with the last selected device
+  const retryConnection = useCallback(async () => {
+    if (lastSelectedDevice) {
+      try {
+        setConnectionState("connecting")
+        setErrorMessage(null)
+        setIsWaitingForPermission(true)
 
-      // Provide more specific error messages based on the error type
-      if (error instanceof Error && error.message.includes("permissions policy")) {
-        setErrorMessage(
-          "USB access is blocked by permissions policy. This feature requires a deployed HTTPS environment and may not work in preview mode.",
-        )
-      } else if (error instanceof DOMException && error.message.includes("Access denied")) {
-        setErrorMessage(
-          "USB access denied. Please reconnect your device and make sure to click 'Allow' on the permission prompt.",
-        )
-      } else if (error instanceof DOMException && error.message.includes("No device selected")) {
-        setErrorMessage("No device selected. Please try again and select your device from the list.")
-      } else if (error instanceof DOMException && error.message.includes("Device unavailable")) {
-        setErrorMessage("Device unavailable. Please disconnect and reconnect your device, then try again.")
-      } else if (error instanceof DOMException && error.message.includes("Transfer failed")) {
-        setErrorMessage("USB transfer failed. Please check your USB connection and try again.")
-      } else {
-        setErrorMessage(error instanceof Error ? error.message : "Unknown error connecting to device")
+        await connectToDevice(lastSelectedDevice)
+        setIsWaitingForPermission(false)
+      } catch (error) {
+        setIsWaitingForPermission(false)
+        setConnectionState("error")
+
+        if (error instanceof Error) {
+          setErrorMessage(error.message)
+        } else {
+          setErrorMessage("Unknown error during retry connection")
+        }
+
+        throw error
       }
-
-      throw error
+    } else {
+      // No previous device, try a fresh connection
+      await connect()
     }
-  }, [detectDeviceMode, findInterfaceAndEndpoints, executeAdbShellCommand, executeFastbootCommand, authenticateAdb])
+  }, [lastSelectedDevice, connect, connectToDevice])
 
   // Reset connection state
   const resetConnection = useCallback(async () => {
@@ -847,6 +987,7 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
       setEndpointOut(0)
       setLocalId(0)
       setRemoteId(0)
+      setIsWaitingForPermission(false)
     }
   }, [device, deviceMode, endpointOut, interfaceNumber])
 
@@ -1074,6 +1215,8 @@ export function DeviceConnectionProvider({ children }: { children: React.ReactNo
     rebootTo,
     resetConnection,
     bypassPermissionCheck,
+    retryConnection,
+    isWaitingForPermission,
   }
 
   return <DeviceConnectionContext.Provider value={value}>{children}</DeviceConnectionContext.Provider>
