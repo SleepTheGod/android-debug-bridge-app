@@ -43,6 +43,8 @@ export function Terminal() {
         "4. Try using a different USB port or cable",
         "5. Restart your device and browser",
         "",
+        "Need help enabling USB debugging? Type 'guide' or visit the USB debugging guide.",
+        "",
       ])
     }
   }, [device, deviceMode, connectionState, errorMessage])
@@ -180,6 +182,15 @@ export function Terminal() {
           } else {
             setHistory((prev) => [...prev, "Unknown device mode. Please reconnect.", ""])
           }
+        } else if (trimmedInput === "guide") {
+          setHistory((prev) => [
+            ...prev,
+            "Opening USB debugging guide...",
+            "You can also access the guide at any time by clicking the link in the device selector.",
+            "",
+          ])
+          // Open the guide in a new tab
+          window.open("/usb-debugging-guide", "_blank")
         } else if (trimmedInput === "clear") {
           setHistory(["Terminal cleared", ""])
         } else {

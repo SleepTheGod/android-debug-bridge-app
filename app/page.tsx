@@ -3,6 +3,7 @@ import { DeviceSelector } from "@/components/device-selector"
 import { AdbInfo } from "@/components/adb-info"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FileOperations } from "@/components/file-operations"
+import Link from "next/link"
 
 export default function Home() {
   return (
@@ -37,6 +38,11 @@ export default function Home() {
         </p>
         <p>This tool requires a compatible browser with WebUSB support and appropriate permissions.</p>
         <p>For full ADB functionality, consider using the native Android Debug Bridge tool.</p>
+        <p className="mt-2">
+          <Link href="/usb-debugging-guide" className="text-blue-400 hover:text-blue-300">
+            Having trouble connecting? View our USB debugging setup guide →
+          </Link>
+        </p>
       </div>
     </main>
   )

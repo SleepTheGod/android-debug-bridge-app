@@ -7,7 +7,6 @@ import { useDeviceConnection } from "@/hooks/use-device-connection"
 import {
   Smartphone,
   RefreshCw,
-  Link,
   AlertCircle,
   AlertTriangle,
   Zap,
@@ -17,9 +16,11 @@ import {
   Lock,
   Unlock,
   HardDrive,
+  Info,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import Link from "next/link"
 
 export function DeviceSelector() {
   const { device, connect, disconnect, deviceInfo, isSupported, deviceMode, connectionState, errorMessage, rebootTo } =
@@ -95,6 +96,14 @@ export function DeviceSelector() {
                 <li>Try a different USB port or cable</li>
                 <li>Restart your device and browser</li>
               </ol>
+
+              <Link
+                href="/usb-debugging-guide"
+                className="text-blue-400 hover:text-blue-300 flex items-center justify-center mt-3 text-xs"
+              >
+                <Info className="h-3 w-3 mr-1" />
+                View detailed USB debugging setup guide
+              </Link>
 
               <Button onClick={handleConnect} className="w-full mt-3" disabled={isConnecting}>
                 {isConnecting ? (
